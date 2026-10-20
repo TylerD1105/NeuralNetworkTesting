@@ -91,12 +91,91 @@ class Activation_Softmax_Loss_CategoricalCrossEntropy():
 
         self.dinputs = self.dinputs / samples
 class Optimizer_SGD:
-    def __init__(self, learning_rate=1.0):
+    def __init__(self, learning_rate=1.0, decay = 0., momentum=0.):
         self.learning_rate = learning_rate
+        self.current_learning_rate = learning_rate
+        self.decay = decay
+        self.iterations = 0
+        self.momentum = momentum
+
+    def pre_update_params(self):
+        if self.decay:
+            self.current_learning_rate = self.learning_rate * \
+            (1. / (1. + self.decay * self.iterations))
 
     def update_params(self, layer):
-        layer.weights += -self.learning_rate * layer.dweights
-        layer.biases += -self.learning_rate * layer.dbiases
+        if self.momentum:
+            #If the layers do not have momentums yet
+            if not hasattr(layer, 'weight_momentums'):
+                #Create momentums for each weight and bias in the layer
+                layer.weight_momentums = np.zeros_like(layer.weights)
+                layer.bias_momentums = np.zeros_like(layer.biases)
+
+            #Build weight updates with momentum - take previous
+            # updates multiplied by retain factor and update with
+            #current gradients
+            weight_updates = \
+                self.momentum * layer.weight_momentums - \
+                self.current_learning_rate * layer.dweights
+            layer.weight_momentums = weight_updates
+
+            #update biases as well
+            bias_updates = \
+                self.momentum * layer.bias_momentums - \
+                self.current_learning_rate * layer.dbiases
+            layer.bias_momentums = bias_updates
+
+        else:
+            weight_updates = -self.current_learning_rate * \
+            layer.dweights
+            bias_updates = -self.current_learning_rate * \
+            layer.dbiases
+        
+        layer.weights += weight_updates
+        layer.biases += bias_updates
+
+
+    def post_update_params(self):
+        self.iterations += 1
+class Optimizer_Adagrad:
+    def __init__(self, learning_rate=1.0, decay = 0., epsilon=1e-7):
+            self.learning_rate = learning_rate
+            self.current_learning_rate = learning_rate
+            self.decay = decay
+            self.iterations = 0
+            self.epsilon = epsilon
+    
+    def pre_update_params(self):
+        if self.decay:
+            self.current_learning_rate = self.learning_rate * \
+            (1. / (1. + self.decay * self.iterations))
+    
+    def update_params(self, layer):
+            #If the layers do not have momentums yet
+            if not hasattr(layer, 'weight_cache'):
+                #Create momentums for each weight and bias in the layer
+                layer.weight_cache = np.zeros_like(layer.weights)
+                layer.bias_cache = np.zeros_like(layer.biases)
+    
+            #Build weight updates with momentum - take previous
+            # updates multiplied by retain factor and update with
+            #current gradients
+            #For AdaGrad, add cache
+            layer.weight_cache += layer.dweights**2
+            layer.bias_cache += layer.dbiases**2
+
+            layer.weights += -self.current_learning_rate * \
+                            layer.dweights / \
+                            (np.sqrt(layer.weight_cache) + self.epsilon)
+            layer.biases += -self.current_learning_rate * \
+                            layer.dbiases / \
+                            (np.sqrt(layer.bias_cache) + self.epsilon)
+
+
+    
+    
+    def post_update_params(self):
+        self.iterations += 1
 
 
 #Full training
@@ -108,7 +187,7 @@ activation1 = Activation_ReLU()
 
 dense2= Layer_Dense(64, 3)
 loss_activation = Activation_Softmax_Loss_CategoricalCrossEntropy()
-optimizer = Optimizer_SGD(learning_rate=1)
+optimizer = Optimizer_Adagrad(decay= 1e-3)
 
 #training
 
@@ -127,7 +206,8 @@ for epoch in range(10001):
     if not epoch % 100:
         print(f'epoch: {epoch}, ' +
               f'acc: {accuracy:.3f}, ' +
-              f'loss: {loss:.3f}')
+              f'loss: {loss:.3f}, '+ 
+              f"lr: {optimizer.current_learning_rate}")
     #backward pass
     loss_activation.backward(loss_activation.output, y)
     dense2.backward(loss_activation.dinputs)
@@ -135,5 +215,7 @@ for epoch in range(10001):
     dense1.backward(activation1.dinputs)
 
     #Update weights and biases
+    optimizer.pre_update_params()
     optimizer.update_params(dense1)
     optimizer.update_params(dense2)
+    optimizer.post_update_params()
