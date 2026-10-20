@@ -153,13 +153,10 @@ class Optimizer_Adagrad:
     def update_params(self, layer):
             #If the layers do not have momentums yet
             if not hasattr(layer, 'weight_cache'):
-                #Create momentums for each weight and bias in the layer
+
                 layer.weight_cache = np.zeros_like(layer.weights)
                 layer.bias_cache = np.zeros_like(layer.biases)
     
-            #Build weight updates with momentum - take previous
-            # updates multiplied by retain factor and update with
-            #current gradients
             #For AdaGrad, add cache
             layer.weight_cache += layer.dweights**2
             layer.bias_cache += layer.dbiases**2
